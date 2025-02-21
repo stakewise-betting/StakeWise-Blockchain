@@ -15,6 +15,7 @@ contract BettingEvents {
         uint256 prizePool;
         mapping(address => Bet) bets;
         address[] bettors;
+        string notificationMessage; // added notification message here
     }
 
     struct Bet {
@@ -61,7 +62,8 @@ contract BettingEvents {
         string memory _imageURL,
         string[] memory _options,
         uint256 _startTime,
-        uint256 _endTime
+        uint256 _endTime,
+        string memory _notificationMessage // added notification message parameter here
     ) external onlyAdmin {
         require(_startTime < _endTime, "Start time must be before end time");
         require(
@@ -80,6 +82,7 @@ contract BettingEvents {
         newEvent.isCompleted = false;
         newEvent.winningOption = "";
         newEvent.prizePool = 0;
+        newEvent.notificationMessage = _notificationMessage; // storing notification message
 
         emit EventCreated(nextEventId, _name, _startTime, _endTime);
         nextEventId++;
@@ -190,7 +193,8 @@ contract BettingEvents {
             uint256 endTime,
             bool isCompleted,
             string memory winningOption,
-            uint256 prizePool
+            uint256 prizePool,
+            string memory notificationMessage // added notification message to return
         )
     {
         BetEvent storage betEvent = events[_eventId];
@@ -204,7 +208,8 @@ contract BettingEvents {
             betEvent.endTime,
             betEvent.isCompleted,
             betEvent.winningOption,
-            betEvent.prizePool
+            betEvent.prizePool,
+            betEvent.notificationMessage // returning notification message
         );
     }
 
