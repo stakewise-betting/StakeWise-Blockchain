@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 contract BettingEvents {
     struct BetEvent {
-        uint256 id;
+        uint256 eventId; // Renamed 'id' to 'eventId'
         string name;
         string description;
         string imageURL;
@@ -15,7 +15,7 @@ contract BettingEvents {
         uint256 prizePool;
         mapping(address => Bet) bets;
         address[] bettors;
-        string notificationMessage; // added notification message here
+        string notificationMessage;
     }
 
     struct Bet {
@@ -29,7 +29,7 @@ contract BettingEvents {
     address public admin;
 
     event EventCreated(
-        uint256 id,
+        uint256 eventId, // Event emits eventId, not id
         string name,
         uint256 startTime,
         uint256 endTime
@@ -48,7 +48,7 @@ contract BettingEvents {
     }
 
     modifier eventExists(uint256 _eventId) {
-        require(_eventId < nextEventId, "Event does not exist");
+        require(events[_eventId].eventId != 0, "Event does not exist"); // Check eventId instead of id
         _;
     }
 
@@ -57,22 +57,24 @@ contract BettingEvents {
     }
 
     function createEvent(
+        uint256 _eventId, // ADDED _eventId parameter - VERY IMPORTANT
         string memory _name,
         string memory _description,
         string memory _imageURL,
         string[] memory _options,
         uint256 _startTime,
         uint256 _endTime,
-        string memory _notificationMessage // added notification message parameter here
+        string memory _notificationMessage
     ) external onlyAdmin {
         require(_startTime < _endTime, "Start time must be before end time");
         require(
             _options.length > 1,
             "There must be at least two betting options"
         );
+        require(events[_eventId].eventId == 0, "Event ID already exists"); // Ensure eventId is not already used
 
-        BetEvent storage newEvent = events[nextEventId];
-        newEvent.id = nextEventId;
+        BetEvent storage newEvent = events[_eventId];
+        newEvent.eventId = _eventId; // Use _eventId provided from frontend - VERY IMPORTANT
         newEvent.name = _name;
         newEvent.description = _description;
         newEvent.imageURL = _imageURL;
@@ -82,10 +84,10 @@ contract BettingEvents {
         newEvent.isCompleted = false;
         newEvent.winningOption = "";
         newEvent.prizePool = 0;
-        newEvent.notificationMessage = _notificationMessage; // storing notification message
+        newEvent.notificationMessage = _notificationMessage;
 
-        emit EventCreated(nextEventId, _name, _startTime, _endTime);
-        nextEventId++;
+        emit EventCreated(_eventId, _name, _startTime, _endTime); // Emit eventId - VERY IMPORTANT
+        nextEventId++; // Increment nextEventId AFTER using current value
     }
 
     function placeBet(
@@ -184,7 +186,7 @@ contract BettingEvents {
         view
         eventExists(_eventId)
         returns (
-            uint256 id,
+            uint256 eventId, // Returns eventId, not id
             string memory name,
             string memory description,
             string memory imageURL,
@@ -194,12 +196,12 @@ contract BettingEvents {
             bool isCompleted,
             string memory winningOption,
             uint256 prizePool,
-            string memory notificationMessage // added notification message to return
+            string memory notificationMessage
         )
     {
         BetEvent storage betEvent = events[_eventId];
         return (
-            betEvent.id,
+            betEvent.eventId, // Returns betEvent.eventId
             betEvent.name,
             betEvent.description,
             betEvent.imageURL,
@@ -209,7 +211,7 @@ contract BettingEvents {
             betEvent.isCompleted,
             betEvent.winningOption,
             betEvent.prizePool,
-            betEvent.notificationMessage // returning notification message
+            betEvent.notificationMessage
         );
     }
 
