@@ -16,12 +16,18 @@ contract BettingEvents {
         mapping(address => Bet) bets;
         address[] bettors;
         string notificationMessage;
+        mapping(string => uint256) optionBetCounts; // Track bet counts per option
     }
 
     struct Bet {
         string option;
         uint256 amount;
         bool exists;
+    }
+
+    struct OptionOdds {
+        string optionName;
+        uint256 oddsPercentage;
     }
 
     mapping(uint256 => BetEvent) public events;
@@ -122,6 +128,7 @@ contract BettingEvents {
         userBet.exists = true;
         betEvent.bettors.push(msg.sender);
         betEvent.prizePool += msg.value;
+        betEvent.optionBetCounts[_option]++; // Increment bet count for the option
 
         emit BetPlaced(_eventId, msg.sender, msg.value, _option);
     }
@@ -219,5 +226,41 @@ contract BettingEvents {
         uint256 _eventId
     ) external view eventExists(_eventId) returns (string[] memory) {
         return events[_eventId].options;
+    }
+
+    function getEventPrizePool(
+        uint256 _eventId
+    ) external view eventExists(_eventId) returns (uint256) {
+        return events[_eventId].prizePool;
+    }
+
+    function getEventOdds(
+        uint256 _eventId
+    ) external view eventExists(_eventId) returns (OptionOdds[] memory) {
+        BetEvent storage betEvent = events[_eventId];
+        uint256 totalBets = betEvent.bettors.length;
+        OptionOdds[] memory optionOddsArray = new OptionOdds[](
+            betEvent.options.length
+        );
+
+        if (totalBets == 0) {
+            for (uint256 i = 0; i < betEvent.options.length; i++) {
+                optionOddsArray[i] = OptionOdds({
+                    optionName: betEvent.options[i],
+                    oddsPercentage: 0
+                }); // Default to 0% if no bets yet
+            }
+            return optionOddsArray;
+        }
+
+        for (uint256 i = 0; i < betEvent.options.length; i++) {
+            string memory option = betEvent.options[i];
+            uint256 betCount = betEvent.optionBetCounts[option];
+            optionOddsArray[i] = OptionOdds({
+                optionName: option,
+                oddsPercentage: (betCount * 100) / totalBets // Percentage of bets for each option
+            });
+        }
+        return optionOddsArray;
     }
 }
