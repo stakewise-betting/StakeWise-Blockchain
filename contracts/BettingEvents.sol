@@ -15,8 +15,8 @@ contract BettingEvents {
         uint256 prizePool;
         mapping(address => Bet) bets;
         address[] bettors;
-        string notificationMessage;
         mapping(string => uint256) optionBetCounts; // Track bet counts per option
+        string rules; // Added rules field
     }
 
     struct Bet {
@@ -33,6 +33,7 @@ contract BettingEvents {
     mapping(uint256 => BetEvent) public events;
     uint256 public nextEventId;
     address public admin;
+    uint256 public totalAdminProfit; // Added state variable to track total admin profit
 
     event EventCreated(
         uint256 eventId, // Event emits eventId, not id
@@ -60,6 +61,7 @@ contract BettingEvents {
 
     constructor() {
         admin = msg.sender;
+        totalAdminProfit = 0; // Initialize total admin profit to 0
     }
 
     function createEvent(
@@ -70,7 +72,7 @@ contract BettingEvents {
         string[] memory _options,
         uint256 _startTime,
         uint256 _endTime,
-        string memory _notificationMessage
+        string memory _rules // Added rules parameter
     ) external onlyAdmin {
         require(_startTime < _endTime, "Start time must be before end time");
         require(
@@ -90,7 +92,7 @@ contract BettingEvents {
         newEvent.isCompleted = false;
         newEvent.winningOption = "";
         newEvent.prizePool = 0;
-        newEvent.notificationMessage = _notificationMessage;
+        newEvent.rules = _rules; // Set rules field
 
         emit EventCreated(_eventId, _name, _startTime, _endTime); // Emit eventId - VERY IMPORTANT
         nextEventId++; // Increment nextEventId AFTER using current value
@@ -174,11 +176,21 @@ contract BettingEvents {
             }
         }
 
+        // Calculate 5% admin fee
+        uint256 adminFee = (betEvent.prizePool * 5) / 100;
+        uint256 remainingPrizePool = betEvent.prizePool - adminFee;
+
+        // Update total admin profit
+        totalAdminProfit += adminFee;
+
+        // Transfer 5% to admin
+        payable(admin).transfer(adminFee);
+
         if (totalWinnersBetAmount > 0) {
             for (uint256 i = 0; i < winnersCount; i++) {
                 address payable winner = winnersPayable[i];
                 uint256 winnerReward = (betEvent.bets[winner].amount *
-                    betEvent.prizePool) / totalWinnersBetAmount;
+                    remainingPrizePool) / totalWinnersBetAmount;
                 winner.transfer(winnerReward);
             }
         }
@@ -203,7 +215,7 @@ contract BettingEvents {
             bool isCompleted,
             string memory winningOption,
             uint256 prizePool,
-            string memory notificationMessage
+            string memory rules // Added rules to return data
         )
     {
         BetEvent storage betEvent = events[_eventId];
@@ -218,7 +230,7 @@ contract BettingEvents {
             betEvent.isCompleted,
             betEvent.winningOption,
             betEvent.prizePool,
-            betEvent.notificationMessage
+            betEvent.rules // Return rules
         );
     }
 
@@ -262,5 +274,9 @@ contract BettingEvents {
             });
         }
         return optionOddsArray;
+    }
+
+    function getTotalAdminProfit() external view returns (uint256) {
+        return totalAdminProfit;
     }
 }
