@@ -2,23 +2,6 @@
 pragma solidity ^0.8.0;
 
 contract BettingEvents {
-    struct BetEvent {
-        uint256 eventId; // Renamed 'id' to 'eventId'
-        string name;
-        string description;
-        string imageURL;
-        string[] options;
-        uint256 startTime;
-        uint256 endTime;
-        bool isCompleted;
-        string winningOption;
-        uint256 prizePool;
-        mapping(address => Bet) bets;
-        address[] bettors;
-        string notificationMessage;
-        mapping(string => uint256) optionBetCounts; // Track bet counts per option
-    }
-
     struct Bet {
         string option;
         uint256 amount;
@@ -30,12 +13,49 @@ contract BettingEvents {
         uint256 oddsPercentage;
     }
 
+    struct BetEvent {
+        uint256 eventId;
+        string name;
+        string description;
+        string imageURL;
+        string[] options;
+        uint256 startTime;
+        uint256 endTime;
+        bool isCompleted;
+        string winningOption;
+        uint256 prizePool;
+        string rules;
+        string notificationImageURL;
+        string notificationMessage;
+        mapping(address => Bet) bets;
+        address[] bettors;
+        mapping(string => uint256) optionBetCounts;
+    }
+
+    // Readable version of BetEvent for return
+    struct BetEventView {
+        uint256 eventId;
+        string name;
+        string description;
+        string imageURL;
+        string[] options;
+        uint256 startTime;
+        uint256 endTime;
+        bool isCompleted;
+        string winningOption;
+        uint256 prizePool;
+        string rules;
+        string notificationImageURL;
+        string notificationMessage;
+    }
+
     mapping(uint256 => BetEvent) public events;
     uint256 public nextEventId;
     address public admin;
+    uint256 public totalAdminProfit;
 
     event EventCreated(
-        uint256 eventId, // Event emits eventId, not id
+        uint256 eventId,
         string name,
         uint256 startTime,
         uint256 endTime
@@ -54,22 +74,25 @@ contract BettingEvents {
     }
 
     modifier eventExists(uint256 _eventId) {
-        require(events[_eventId].eventId != 0, "Event does not exist"); // Check eventId instead of id
+        require(events[_eventId].eventId != 0, "Event does not exist");
         _;
     }
 
     constructor() {
         admin = msg.sender;
+        totalAdminProfit = 0;
     }
 
     function createEvent(
-        uint256 _eventId, // ADDED _eventId parameter - VERY IMPORTANT
+        uint256 _eventId,
         string memory _name,
         string memory _description,
         string memory _imageURL,
         string[] memory _options,
         uint256 _startTime,
         uint256 _endTime,
+        string memory _rules,
+        string memory _notificationImageURL,
         string memory _notificationMessage
     ) external onlyAdmin {
         require(_startTime < _endTime, "Start time must be before end time");
@@ -77,10 +100,10 @@ contract BettingEvents {
             _options.length > 1,
             "There must be at least two betting options"
         );
-        require(events[_eventId].eventId == 0, "Event ID already exists"); // Ensure eventId is not already used
+        require(events[_eventId].eventId == 0, "Event ID already exists");
 
         BetEvent storage newEvent = events[_eventId];
-        newEvent.eventId = _eventId; // Use _eventId provided from frontend - VERY IMPORTANT
+        newEvent.eventId = _eventId;
         newEvent.name = _name;
         newEvent.description = _description;
         newEvent.imageURL = _imageURL;
@@ -90,10 +113,12 @@ contract BettingEvents {
         newEvent.isCompleted = false;
         newEvent.winningOption = "";
         newEvent.prizePool = 0;
+        newEvent.rules = _rules;
+        newEvent.notificationImageURL = _notificationImageURL;
         newEvent.notificationMessage = _notificationMessage;
 
-        emit EventCreated(_eventId, _name, _startTime, _endTime); // Emit eventId - VERY IMPORTANT
-        nextEventId++; // Increment nextEventId AFTER using current value
+        emit EventCreated(_eventId, _name, _startTime, _endTime);
+        nextEventId++;
     }
 
     function placeBet(
@@ -128,7 +153,7 @@ contract BettingEvents {
         userBet.exists = true;
         betEvent.bettors.push(msg.sender);
         betEvent.prizePool += msg.value;
-        betEvent.optionBetCounts[_option]++; // Increment bet count for the option
+        betEvent.optionBetCounts[_option]++;
 
         emit BetPlaced(_eventId, msg.sender, msg.value, _option);
     }
@@ -174,11 +199,16 @@ contract BettingEvents {
             }
         }
 
+        uint256 adminFee = (betEvent.prizePool * 5) / 100;
+        uint256 remainingPrizePool = betEvent.prizePool - adminFee;
+        totalAdminProfit += adminFee;
+        payable(admin).transfer(adminFee);
+
         if (totalWinnersBetAmount > 0) {
             for (uint256 i = 0; i < winnersCount; i++) {
                 address payable winner = winnersPayable[i];
                 uint256 winnerReward = (betEvent.bets[winner].amount *
-                    betEvent.prizePool) / totalWinnersBetAmount;
+                    remainingPrizePool) / totalWinnersBetAmount;
                 winner.transfer(winnerReward);
             }
         }
@@ -188,38 +218,24 @@ contract BettingEvents {
 
     function getEvent(
         uint256 _eventId
-    )
-        external
-        view
-        eventExists(_eventId)
-        returns (
-            uint256 eventId, // Returns eventId, not id
-            string memory name,
-            string memory description,
-            string memory imageURL,
-            string[] memory options,
-            uint256 startTime,
-            uint256 endTime,
-            bool isCompleted,
-            string memory winningOption,
-            uint256 prizePool,
-            string memory notificationMessage
-        )
-    {
+    ) external view eventExists(_eventId) returns (BetEventView memory) {
         BetEvent storage betEvent = events[_eventId];
-        return (
-            betEvent.eventId, // Returns betEvent.eventId
-            betEvent.name,
-            betEvent.description,
-            betEvent.imageURL,
-            betEvent.options,
-            betEvent.startTime,
-            betEvent.endTime,
-            betEvent.isCompleted,
-            betEvent.winningOption,
-            betEvent.prizePool,
-            betEvent.notificationMessage
-        );
+        return
+            BetEventView(
+                betEvent.eventId,
+                betEvent.name,
+                betEvent.description,
+                betEvent.imageURL,
+                betEvent.options,
+                betEvent.startTime,
+                betEvent.endTime,
+                betEvent.isCompleted,
+                betEvent.winningOption,
+                betEvent.prizePool,
+                betEvent.rules,
+                betEvent.notificationImageURL,
+                betEvent.notificationMessage
+            );
     }
 
     function getEventOptions(
@@ -248,7 +264,7 @@ contract BettingEvents {
                 optionOddsArray[i] = OptionOdds({
                     optionName: betEvent.options[i],
                     oddsPercentage: 0
-                }); // Default to 0% if no bets yet
+                });
             }
             return optionOddsArray;
         }
@@ -258,9 +274,14 @@ contract BettingEvents {
             uint256 betCount = betEvent.optionBetCounts[option];
             optionOddsArray[i] = OptionOdds({
                 optionName: option,
-                oddsPercentage: (betCount * 100) / totalBets // Percentage of bets for each option
+                oddsPercentage: (betCount * 100) / totalBets
             });
         }
+
         return optionOddsArray;
+    }
+
+    function getTotalAdminProfit() external view returns (uint256) {
+        return totalAdminProfit;
     }
 }
