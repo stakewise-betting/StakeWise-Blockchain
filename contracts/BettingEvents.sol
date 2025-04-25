@@ -83,6 +83,20 @@ contract BettingEvents {
         totalAdminProfit = 0;
     }
 
+    uint256[] public eventIds;
+
+    function getUserBet(
+        uint256 _eventId,
+        address _user
+    ) public view returns (string memory, uint256, bool) {
+        Bet storage bet = events[_eventId].bets[_user];
+        return (bet.option, bet.amount, bet.exists);
+    }
+
+    function getAllEventIds() public view returns (uint256[] memory) {
+        return eventIds;
+    }
+
     function createEvent(
         uint256 _eventId,
         string memory _name,
@@ -101,6 +115,7 @@ contract BettingEvents {
             "There must be at least two betting options"
         );
         require(events[_eventId].eventId == 0, "Event ID already exists");
+        eventIds.push(_eventId);
 
         BetEvent storage newEvent = events[_eventId];
         newEvent.eventId = _eventId;
