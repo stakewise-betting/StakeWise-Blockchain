@@ -1,10 +1,20 @@
 {
+  "name": "truffle-deploy",
+  "version": "1.0.0",
+  "packageManager": "pnpm@8.15.0",
   "dependencies": {
     "@truffle/hdwallet-provider": "^2.1.15",
-    "web3": "^4.16.0"
+    "web3": "^4.16.0",
+    "truffle": "^5.11.5"
   },
   "scripts": {
-  "build": "truffle compile"
-}
-
+    "build": "truffle compile",
+    "deploy": "truffle migrate --network mainnet",
+    "deploy:testnet": "truffle migrate --network sepolia",
+    "start": "npm run deploy:testnet"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
 }

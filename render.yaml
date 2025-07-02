@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: truffle-deployer
+    env: node
+    buildCommand: |
+      corepack enable
+      pnpm install
+      pnpm run build
+    startCommand: pnpm start
+    envVars:
+      - key: NODE_VERSION
+        value: "18"
+      - key: PNPM_VERSION
+        value: "8"
