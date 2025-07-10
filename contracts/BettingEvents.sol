@@ -30,6 +30,7 @@ contract BettingEvents {
         mapping(address => Bet) bets;
         address[] bettors;
         mapping(string => uint256) optionBetCounts;
+        mapping(string => uint256) optionBetAmounts; // Added to track amount per option
     }
 
     // Readable version of BetEvent for return
@@ -169,6 +170,7 @@ contract BettingEvents {
         betEvent.bettors.push(msg.sender);
         betEvent.prizePool += msg.value;
         betEvent.optionBetCounts[_option]++;
+        betEvent.optionBetAmounts[_option] += msg.value; // Added to track amount per option
 
         emit BetPlaced(_eventId, msg.sender, msg.value, _option);
     }
@@ -269,12 +271,12 @@ contract BettingEvents {
         uint256 _eventId
     ) external view eventExists(_eventId) returns (OptionOdds[] memory) {
         BetEvent storage betEvent = events[_eventId];
-        uint256 totalBets = betEvent.bettors.length;
+        uint256 totalPrizePool = betEvent.prizePool;
         OptionOdds[] memory optionOddsArray = new OptionOdds[](
             betEvent.options.length
         );
 
-        if (totalBets == 0) {
+        if (totalPrizePool == 0) {
             for (uint256 i = 0; i < betEvent.options.length; i++) {
                 optionOddsArray[i] = OptionOdds({
                     optionName: betEvent.options[i],
@@ -286,10 +288,10 @@ contract BettingEvents {
 
         for (uint256 i = 0; i < betEvent.options.length; i++) {
             string memory option = betEvent.options[i];
-            uint256 betCount = betEvent.optionBetCounts[option];
+            uint256 amountOnOption = betEvent.optionBetAmounts[option];
             optionOddsArray[i] = OptionOdds({
                 optionName: option,
-                oddsPercentage: (betCount * 100) / totalBets
+                oddsPercentage: (amountOnOption * 100) / totalPrizePool
             });
         }
 
