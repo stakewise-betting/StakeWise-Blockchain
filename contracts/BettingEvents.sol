@@ -299,4 +299,12 @@ contract BettingEvents {
     function getTotalAdminProfit() external view returns (uint256) {
         return totalAdminProfit;
     }
+
+    function getTotalBetsPlaced() public view returns (uint256) {
+        uint256 total = 0;
+        for (uint256 i = 0; i < eventIds.length; i++) {
+            total += events[eventIds[i]].prizePool;
+        }
+        return total;
+    }
 }
