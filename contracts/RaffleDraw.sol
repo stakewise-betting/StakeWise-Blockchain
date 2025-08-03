@@ -2,354 +2,214 @@
 pragma solidity ^0.8.0;
 
 contract RaffleDraw {
-    struct Ticket {
-        uint256 ticketId;
-        address owner;
-        bool exists;
-    }
-
-    // Create a struct for raffle parameters to avoid stack too deep error
-    struct RaffleParams {
-        string name;
-        string description;
-        string imageURL;
-        uint256 startTime;
-        uint256 endTime;
-        uint256 ticketPrice;
-        uint256 prizeAmount;
-        string notificationImageURL;
-        string notificationMessage;
-    }
-
-    // Split the RaffleData into core data and extra data to avoid stack issues
-    struct RaffleCore {
-        uint256 raffleId;
-        string name;
-        string description;
-        string imageURL;
-        uint256 startTime;
-        uint256 endTime;
-        uint256 ticketPrice; 
-        uint256 prizeAmount;
-    }
-    
-    struct RaffleExtra {
-        bool isCompleted;
-        address winner;
-        uint256 totalTicketsSold;
-        string notificationImageURL;
-        string notificationMessage;
-    }
-
-    struct RaffleData {
-        RaffleCore core;
-        RaffleExtra extra;
-        mapping(uint256 => Ticket) tickets;
-        mapping(address => uint256[]) userTickets;
-        address[] participants;
-    }
-
-    // Readable version of RaffleData for return
-    struct RaffleDataView {
-        uint256 raffleId;
-        string name;
-        string description;
-        string imageURL;
-        uint256 startTime;
-        uint256 endTime;
-        uint256 ticketPrice;
-        uint256 prizeAmount;
-        bool isCompleted;
-        address winner;
-        uint256 totalTicketsSold;
-        string notificationImageURL;
-        string notificationMessage;
-    }
-
-    mapping(uint256 => RaffleData) public raffles;
-    uint256[] public raffleIds;
-    uint256 public nextRaffleId = 1;
+    // STATE VARIABLES
     address public admin;
-    uint256 public totalAdminProfit;
+    uint256 public nextRaffleId;
 
+    // DATA STRUCTURES
+    struct Raffle {
+        uint256 raffleId;
+        string name;
+        string imageURL;
+        string category;
+        uint256 startTime;
+        uint256 endTime;
+        uint256 ticketPrice;
+        uint256 prizeAmount;
+        bool isCompleted;
+        address winner;
+        uint256 totalTicketsSold;
+        address[] participants;
+        mapping(address => uint256) ticketsBought;
+    }
+
+    struct RaffleView {
+        uint256 raffleId;
+        string name;
+        string imageURL;
+        string category;
+        uint256 startTime;
+        uint256 endTime;
+        uint256 ticketPrice;
+        uint256 prizeAmount;
+        bool isCompleted;
+        address winner;
+        uint256 totalTicketsSold;
+    }
+
+    mapping(uint256 => Raffle) public raffles;
+    uint256[] public raffleIds;
+
+    // EVENTS
     event RaffleCreated(
-        uint256 raffleId,
+        uint256 indexed raffleId,
         string name,
-        uint256 startTime,
-        uint256 endTime,
-        uint256 ticketPrice,
-        uint256 prizeAmount
+        uint256 prizeAmount,
+        uint256 endTime
     );
 
     event TicketPurchased(
-        uint256 raffleId,
-        address buyer,
-        uint256 ticketId,
-        uint256 amount
+        uint256 indexed raffleId,
+        address indexed buyer,
+        uint256 quantity,
+        uint256 totalCost
     );
 
-    event WinnerSelected(
-        uint256 raffleId,
-        address winner,
+    event WinnerDrawn(
+        uint256 indexed raffleId,
+        address indexed winner,
         uint256 prizeAmount
     );
 
+    // NEW EVENT for ending raffle without tickets
+    event RaffleEnded(
+        uint256 indexed raffleId,
+        string name,
+        uint256 prizeAmountReturned
+    );
+
+    // MODIFIERS
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin can perform this action");
         _;
     }
 
     modifier raffleExists(uint256 _raffleId) {
-        require(raffles[_raffleId].core.raffleId != 0, "Raffle does not exist");
+        require(raffles[_raffleId].raffleId != 0, "Raffle does not exist");
         _;
     }
 
     constructor() {
         admin = msg.sender;
-        totalAdminProfit = 0;
+        nextRaffleId = 1;
     }
 
-    // Split the createRaffleDraw function into multiple helper functions to avoid stack depth issues
-    function createRaffleDraw(
-        uint256 _raffleId,
-        RaffleParams calldata params
-    ) external onlyAdmin {
-        // Validate parameters
-        _validateRaffleParams(_raffleId, params);
+    function createRaffle(
+        string memory _name,
+        string memory _imageURL,
+        string memory _category,
+        uint256 _startTime,
+        uint256 _endTime,
+        uint256 _ticketPrice,
+        uint256 _prizeAmount
+    ) external payable onlyAdmin {
+        require(_startTime < _endTime, "Start time must be before end time");
+        require(_ticketPrice > 0, "Ticket price must be greater than 0");
+        require(_prizeAmount > 0, "Prize amount must be greater than 0");
+        require(msg.value == _prizeAmount, "Must send exact prize amount to fund the raffle");
+
+        uint256 currentRaffleId = nextRaffleId;
+        raffles[currentRaffleId].raffleId = currentRaffleId;
+        raffles[currentRaffleId].name = _name;
+        raffles[currentRaffleId].imageURL = _imageURL;
+        raffles[currentRaffleId].category = _category;
+        raffles[currentRaffleId].startTime = _startTime;
+        raffles[currentRaffleId].endTime = _endTime;
+        raffles[currentRaffleId].ticketPrice = _ticketPrice;
+        raffles[currentRaffleId].prizeAmount = _prizeAmount;
         
-        // Create the raffle
-        _createRaffle(_raffleId, params);
-        
-        // Emit the event
-        emit RaffleCreated(
-            _raffleId, 
-            params.name, 
-            params.startTime, 
-            params.endTime, 
-            params.ticketPrice, 
-            params.prizeAmount
-        );
-        
-        // Update nextRaffleId if necessary
-        if (nextRaffleId <= _raffleId) {
-            nextRaffleId = _raffleId + 1;
-        }
-    }
-    
-    // Validation function to reduce stack usage
-    function _validateRaffleParams(uint256 _raffleId, RaffleParams calldata params) private view {
-        require(params.startTime < params.endTime, "Start time must be before end time");
-        require(params.ticketPrice > 0, "Ticket price must be greater than 0");
-        require(params.prizeAmount > 0, "Prize amount must be greater than 0");
-        require(raffles[_raffleId].core.raffleId == 0, "Raffle ID already exists");
-    }
-    
-    // Create raffle function to reduce stack usage
-    function _createRaffle(uint256 _raffleId, RaffleParams calldata params) private {
-        raffleIds.push(_raffleId);
-        
-        RaffleData storage newRaffle = raffles[_raffleId];
-        
-        // Set core data
-        newRaffle.core.raffleId = _raffleId;
-        newRaffle.core.name = params.name;
-        newRaffle.core.description = params.description;
-        newRaffle.core.imageURL = params.imageURL;
-        newRaffle.core.startTime = params.startTime;
-        newRaffle.core.endTime = params.endTime;
-        newRaffle.core.ticketPrice = params.ticketPrice;
-        newRaffle.core.prizeAmount = params.prizeAmount;
-        
-        // Set extra data
-        newRaffle.extra.isCompleted = false;
-        newRaffle.extra.winner = address(0);
-        newRaffle.extra.totalTicketsSold = 0;
-        newRaffle.extra.notificationImageURL = params.notificationImageURL;
-        newRaffle.extra.notificationMessage = params.notificationMessage;
+        raffleIds.push(currentRaffleId);
+        nextRaffleId++;
+
+        emit RaffleCreated(currentRaffleId, _name, _prizeAmount, _endTime);
     }
 
-    function buyTicket(uint256 _raffleId, uint256 _quantity) external payable raffleExists(_raffleId) {
-        RaffleData storage raffle = raffles[_raffleId];
-        
-        require(block.timestamp >= raffle.core.startTime, "Raffle has not started yet");
-        require(block.timestamp <= raffle.core.endTime, "Raffle has ended");
-        require(!raffle.extra.isCompleted, "Raffle is already completed");
-        require(_quantity > 0, "Must purchase at least one ticket");
-        
-        uint256 totalPrice = raffle.core.ticketPrice * _quantity;
-        require(msg.value >= totalPrice, "Insufficient funds sent");
+    function buyTickets(uint256 _raffleId, uint256 _quantity) external payable raffleExists(_raffleId) {
+        Raffle storage raffle = raffles[_raffleId];
+        require(block.timestamp >= raffle.startTime, "Raffle has not started yet");
+        require(block.timestamp <= raffle.endTime, "Raffle has ended");
+        require(!raffle.isCompleted, "Raffle is already completed");
+        require(_quantity > 0 && _quantity <= 1000, "Quantity must be between 1 and 1000");
 
-        // Check if this is a new participant
-        bool isNewParticipant = raffle.userTickets[msg.sender].length == 0;
-        
-        // Process ticket purchases - use a helper function to reduce stack usage
-        _processPurchase(_raffleId, _quantity, raffle, isNewParticipant);
-        
-        // Refund excess payment if any
-        if (msg.value > totalPrice) {
-            payable(msg.sender).transfer(msg.value - totalPrice);
-        }
-    }
-    
-    // Helper function to process ticket purchases
-    function _processPurchase(
-        uint256 _raffleId, 
-        uint256 _quantity, 
-        RaffleData storage raffle, 
-        bool isNewParticipant
-    ) private {
-        for (uint256 i = 0; i < _quantity; i++) {
-            uint256 ticketId = raffle.extra.totalTicketsSold + 1;
-            
-            Ticket storage newTicket = raffle.tickets[ticketId];
-            newTicket.ticketId = ticketId;
-            newTicket.owner = msg.sender;
-            newTicket.exists = true;
-            
-            raffle.userTickets[msg.sender].push(ticketId);
-            raffle.extra.totalTicketsSold++;
-            
-            emit TicketPurchased(_raffleId, msg.sender, ticketId, raffle.core.ticketPrice);
-        }
-        
-        // Add participant to list if new
-        if (isNewParticipant) {
+        uint256 totalCost = raffle.ticketPrice * _quantity;
+        require(msg.value == totalCost, "Insufficient or incorrect ETH sent");
+
+        for (uint i = 0; i < _quantity; i++) {
             raffle.participants.push(msg.sender);
         }
+        
+        raffle.ticketsBought[msg.sender] += _quantity;
+        raffle.totalTicketsSold += _quantity;
+
+        emit TicketPurchased(_raffleId, msg.sender, _quantity, totalCost);
     }
 
-    function selectWinner(uint256 _raffleId) external raffleExists(_raffleId) {
-        RaffleData storage raffle = raffles[_raffleId];
-        
-        require(block.timestamp >= raffle.core.endTime, "Raffle has not ended yet");
-        require(!raffle.extra.isCompleted, "Winner already selected");
-        require(raffle.extra.totalTicketsSold > 0, "No tickets sold");
+    function drawWinner(uint256 _raffleId) external onlyAdmin raffleExists(_raffleId) {
+        Raffle storage raffle = raffles[_raffleId];
+        require(block.timestamp >= raffle.endTime, "Raffle has not ended yet");
+        require(!raffle.isCompleted, "Winner has already been selected");
+        require(raffle.participants.length > 0, "No tickets were sold for this raffle");
 
-        // Use helper functions to reduce stack usage
-        address winnerAddress = _selectRandomWinner(raffle, _raffleId);
-        _distributeRewards(raffle, winnerAddress);
+        uint256 randomIndex = _generateRandomNumber(raffle.participants.length);
+        address winningAddress = raffle.participants[randomIndex];
+        raffle.winner = winningAddress;
+        raffle.isCompleted = true;
+
+        (bool successPrize, ) = payable(winningAddress).call{value: raffle.prizeAmount}("");
+        require(successPrize, "Failed to transfer prize to winner");
         
-        emit WinnerSelected(_raffleId, winnerAddress, raffle.core.prizeAmount);
+        uint256 ticketRevenue = address(this).balance - raffle.prizeAmount;
+        if (ticketRevenue > 0) {
+            (bool successRevenue, ) = payable(admin).call{value: ticketRevenue}("");
+            require(successRevenue, "Failed to transfer revenue to admin");
+        }
+
+        emit WinnerDrawn(_raffleId, winningAddress, raffle.prizeAmount);
     }
-    
-    // Helper function to select random winner
-    function _selectRandomWinner(RaffleData storage raffle, uint256 _raffleId) private view returns (address) {
-        // Generate a pseudo-random number for winner selection
+
+    /**
+     * @dev NEW FUNCTION: Ends a raffle with no tickets sold and returns prize to admin
+     */
+    function endRaffle(uint256 _raffleId) external onlyAdmin raffleExists(_raffleId) {
+        Raffle storage raffle = raffles[_raffleId];
+        require(block.timestamp >= raffle.endTime, "Raffle has not ended yet");
+        require(!raffle.isCompleted, "Raffle is already completed");
+        require(raffle.participants.length == 0, "Cannot end raffle with sold tickets - use drawWinner instead");
+
+        // Mark raffle as completed
+        raffle.isCompleted = true;
+        // No winner since no tickets were sold
+        raffle.winner = address(0);
+
+        // Return the prize amount to admin
+        (bool success, ) = payable(admin).call{value: raffle.prizeAmount}("");
+        require(success, "Failed to return prize to admin");
+
+        emit RaffleEnded(_raffleId, raffle.name, raffle.prizeAmount);
+    }
+
+    function _generateRandomNumber(uint256 _upperBound) private view returns (uint256) {
         uint256 randomSeed = uint256(keccak256(abi.encodePacked(
             block.timestamp,
             block.difficulty,
-            raffle.extra.totalTicketsSold,
-            _raffleId
+            msg.sender,
+            _upperBound
         )));
-        
-        uint256 winningTicketId = (randomSeed % raffle.extra.totalTicketsSold) + 1;
-        
-        // Get the winner from the winning ticket
-        return raffle.tickets[winningTicketId].owner;
-    }
-    
-    // Helper function to distribute rewards
-    function _distributeRewards(RaffleData storage raffle, address winnerAddress) private {
-        // Update raffle data
-        raffle.extra.isCompleted = true;
-        raffle.extra.winner = winnerAddress;
-        
-        // Calculate admin fee (5%)
-        uint256 totalFunds = raffle.extra.totalTicketsSold * raffle.core.ticketPrice;
-        uint256 adminFee = (totalFunds * 5) / 100;
-        uint256 prizeToDistribute = totalFunds - adminFee;
-        
-        // Update admin profit
-        totalAdminProfit += adminFee;
-        
-        // Transfer prize to winner
-        payable(winnerAddress).transfer(prizeToDistribute);
-        
-        // Transfer admin fee
-        payable(admin).transfer(adminFee);
+        return randomSeed % _upperBound;
     }
 
-    // Get all raffle IDs
-    function getAllRaffleIds() public view returns (uint256[] memory) {
-        return raffleIds;
-    }
-
-    // Get raffle details by ID
-    function getRaffle(uint256 _raffleId) external view raffleExists(_raffleId) returns (RaffleDataView memory) {
-        RaffleData storage raffle = raffles[_raffleId];
-        
-        return RaffleDataView(
-            raffle.core.raffleId,
-            raffle.core.name,
-            raffle.core.description,
-            raffle.core.imageURL,
-            raffle.core.startTime,
-            raffle.core.endTime,
-            raffle.core.ticketPrice,
-            raffle.core.prizeAmount,
-            raffle.extra.isCompleted,
-            raffle.extra.winner,
-            raffle.extra.totalTicketsSold,
-            raffle.extra.notificationImageURL,
-            raffle.extra.notificationMessage
+    function getRaffle(uint256 _raffleId) external view raffleExists(_raffleId) returns (RaffleView memory) {
+        Raffle storage r = raffles[_raffleId];
+        return RaffleView(
+            r.raffleId,
+            r.name,
+            r.imageURL,
+            r.category,
+            r.startTime,
+            r.endTime,
+            r.ticketPrice,
+            r.prizeAmount,
+            r.isCompleted,
+            r.winner,
+            r.totalTicketsSold
         );
     }
 
-    // Get user's tickets for a specific raffle
-    function getUserTickets(uint256 _raffleId, address _user) external view raffleExists(_raffleId) returns (uint256[] memory) {
-        return raffles[_raffleId].userTickets[_user];
+    function getAllRaffleIds() external view returns (uint256[] memory) {
+        return raffleIds;
     }
 
-    // Get total number of tickets sold for a raffle
-    function getTotalTicketsSold(uint256 _raffleId) external view raffleExists(_raffleId) returns (uint256) {
-        return raffles[_raffleId].extra.totalTicketsSold;
-    }
-
-    // Check if a user has won a raffle
-    function hasUserWon(uint256 _raffleId, address _user) external view raffleExists(_raffleId) returns (bool) {
-        RaffleData storage raffle = raffles[_raffleId];
-        return raffle.extra.isCompleted && raffle.extra.winner == _user;
-    }
-
-    // Get admin profit
-    function getTotalAdminProfit() external view returns (uint256) {
-        return totalAdminProfit;
-    }
-
-    // Get active raffles (not ended or completed)
-    function getActiveRaffles() external view returns (uint256[] memory) {
-        uint256 activeCount = 0;
-        
-        // Count active raffles
-        for (uint256 i = 0; i < raffleIds.length; i++) {
-            uint256 raffleId = raffleIds[i];
-            RaffleData storage raffle = raffles[raffleId];
-            
-            if (!raffle.extra.isCompleted && block.timestamp <= raffle.core.endTime) {
-                activeCount++;
-            }
-        }
-        
-        // Create array of active raffle IDs
-        uint256[] memory activeRaffleIds = new uint256[](activeCount);
-        uint256 index = 0;
-        
-        for (uint256 i = 0; i < raffleIds.length; i++) {
-            uint256 raffleId = raffleIds[i];
-            RaffleData storage raffle = raffles[raffleId];
-            
-            if (!raffle.extra.isCompleted && block.timestamp <= raffle.core.endTime) {
-                activeRaffleIds[index] = raffleId;
-                index++;
-            }
-        }
-        
-        return activeRaffleIds;
-    }
-    
-    // Check if a raffle should select a winner (has ended but winner not selected)
-    function raffleReadyForWinnerSelection(uint256 _raffleId) external view raffleExists(_raffleId) returns (bool) {
-        RaffleData storage raffle = raffles[_raffleId];
-        return block.timestamp >= raffle.core.endTime && !raffle.extra.isCompleted && raffle.extra.totalTicketsSold > 0;
+    function getUserTicketCount(uint256 _raffleId, address _user) external view raffleExists(_raffleId) returns (uint256) {
+        return raffles[_raffleId].ticketsBought[_user];
     }
 }
