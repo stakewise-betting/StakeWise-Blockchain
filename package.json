@@ -5,6 +5,6 @@
     "web3": "^4.16.0"
   },
   "scripts": {
-    "build": "truffle compile"
+    "build": "node init && truffle compile"
   }
 }
